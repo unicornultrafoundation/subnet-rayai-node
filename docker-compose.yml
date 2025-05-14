@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  rayai-node:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3333:3333"   # API server 
+      - "6379:6379"   # Ray head port
+      - "8265:8265"   # Ray dashboard
+    environment:
+      - API_PORT=3333 # Changed from 8080
+      - ALLOWED_IPS=*
+      - LOG_LEVEL=info
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

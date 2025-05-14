@@ -33,21 +33,29 @@
 
 ## 🔧 Usage
 
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| API_PORT | Port for API server | 8080 |
+| RAY_BIN_PATH | Path to Ray binary | ray (from PATH) |
+| ALLOWED_IPS | Comma-separated list of allowed IPs/CIDR | 127.0.0.1 |
+| LOG_LEVEL | Logging level | info |
+
 ### Run API Server
 
 ```bash
-go run main.go
+go run cmd/rayai-node/main.go  # API server will start on port 3333 by default
 ```
 
 ### Call API to Start Ray Head
 
 ```http
-POST /start/head
+POST http://localhost:3333/start/head
 Content-Type: application/json
 
 {
   "port": 6379,
-  "shmSize": "8gb",
   "username": "rayuser",
   "password": "raypass"
 }
@@ -61,10 +69,37 @@ Content-Type: application/json
 
 {
   "headIP": "192.168.1.10",
-  "shmSize": "8gb",
   "username": "rayuser",
   "password": "raypass"
 }
+```
+
+---
+
+## 🐳 Docker Deployment
+
+### Build Docker Image
+
+```bash
+docker build -t rayai-node .
+```
+
+### Run Container
+
+```bash
+docker run -d \
+  --name rayai-node \
+  -p 3333:3333 \
+  -p 6379:6379 \
+  -p 8265:8265 \
+  -e ALLOWED_IPS=* \
+  rayai-node
+```
+
+### Using Docker Compose
+
+```bash
+docker-compose up -d
 ```
 
 ---
