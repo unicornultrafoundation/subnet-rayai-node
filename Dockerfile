@@ -1,10 +1,10 @@
+ARG BASE_IMAGE="rayproject/ray:latest"
+
 # Stage 1: Build Golang application
 FROM golang:1.24 AS builder
 
 WORKDIR /app
 
-# Install necessary build dependencies
-RUN apk add --no-cache git
 
 # Copy go.mod and go.sum first for better caching
 COPY go.mod ./
@@ -18,7 +18,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o rayai-node ./cmd/rayai-node
 
 # Stage 2: Create final image with Ray
-FROM rayproject/ray:latest
+FROM ${BASE_IMAGE}
 
 # Install required system dependencies
 USER root
