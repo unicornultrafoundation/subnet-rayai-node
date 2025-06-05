@@ -21,10 +21,11 @@ type Server struct {
 // NewServer creates a new API server
 func NewServer(cfg *config.Config) *Server {
 	// Create Ray service
-	rayService := ray.NewService(cfg)
 
 	// Create Resource Manager
-	resourceMgr := resource.NewManager(cfg, rayService)
+	resourceMgr := resource.NewManager(cfg)
+
+	rayService := ray.NewService(cfg, resourceMgr)
 
 	// Create Gin router with default middleware
 	router := gin.Default()

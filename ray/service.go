@@ -1,20 +1,17 @@
 package ray
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
-	"runtime"
-	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/unicornultrafoundation/subnet-rayai-node/config"
+	"github.com/unicornultrafoundation/subnet-rayai-node/resource"
 )
 
 // NodeRole represents the role of a Ray node
@@ -34,20 +31,22 @@ type RoleInfo struct {
 
 // Service manages Ray processes on the local system
 type Service struct {
-	binPath   string
-	managerIP string
-	client    *http.Client
+	binPath     string
+	managerIP   string
+	client      *http.Client
+	resourceMgr *resource.Manager
 }
 
 // NewService creates a new Ray service manager
-func NewService(cfg *config.Config) *Service {
+func NewService(cfg *config.Config, resourceMgr *resource.Manager) *Service {
 	if cfg.RayBinPath == "" {
 		cfg.RayBinPath = "ray" // Use ray from PATH if not specified
 	}
 
 	service := &Service{
-		binPath:   cfg.RayBinPath,
-		managerIP: cfg.ManagerIP,
+		binPath:     cfg.RayBinPath,
+		managerIP:   cfg.ManagerIP,
+		resourceMgr: resourceMgr,
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -84,30 +83,9 @@ func (s *Service) GetRole() (*RoleInfo, error) {
 		return &RoleInfo{Role: RoleHead}, nil
 	}
 
-	// Get local hostname to uniquely identify this node
-	hostname, err := os.Hostname()
-	if err != nil {
-		hostname = "unknown"
-	}
-
-	// Get resource information to send to manager for role decision
-	resources, err := s.GetResources()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get resource information: %w", err)
-	}
-
-	// Prepare request body
-	requestBody, err := json.Marshal(map[string]interface{}{
-		"hostname":  hostname,
-		"resources": resources,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
 	// Call manager API to get role assignment
 	url := fmt.Sprintf("http://%s/api/node/role", s.managerIP)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(requestBody))
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -280,106 +258,6 @@ func (s *Service) GetStatus() (string, error) {
 	}
 
 	return string(output), nil
-}
-
-type Resources struct {
-	CPUCount       int    `json:"cpu"`
-	CPUName        string `json:"cpu_name,omitempty"`
-	MemoryTotal    uint64 `json:"memory_total"`
-	MemoryFree     uint64 `json:"memory_free"`
-	DiskTotal      uint64 `json:"disk_total"`
-	DiskFree       uint64 `json:"disk_free"`
-	GPUCount       int    `json:"gpu"`
-	GPUModel       string `json:"gpu_model,omitempty"`
-	GPUMemoryTotal uint64 `json:"gpu_memory_total,omitempty"` // MiB
-	GPUMemoryFree  uint64 `json:"gpu_memory_free,omitempty"`  // MiB
-}
-
-// GetResources returns node resource information (CPU, RAM, Disk, GPU)
-func (s *Service) GetResources() (*Resources, error) {
-	// CPU
-	cpuCount := runtime.NumCPU()
-
-	// Memory
-	var memStats syscall.Sysinfo_t
-	memTotal := uint64(0)
-	memFree := uint64(0)
-	if err := syscall.Sysinfo(&memStats); err == nil {
-		memTotal = memStats.Totalram * uint64(memStats.Unit)
-		memFree = memStats.Freeram * uint64(memStats.Unit)
-	}
-
-	// Disk
-	var stat syscall.Statfs_t
-	diskTotal := uint64(0)
-	diskFree := uint64(0)
-	if err := syscall.Statfs("/data", &stat); err == nil {
-		diskTotal = stat.Blocks * uint64(stat.Bsize)
-		diskFree = stat.Bfree * uint64(stat.Bsize)
-	}
-
-	// GPU (try nvidia-smi, fallback to 0)
-	gpuCount := 0
-	gpuModel := ""
-	var gpuMemTotal uint64 = 0
-	var gpuMemFree uint64 = 0
-
-	// Use nvidia-smi to query GPU name, total memory, and free memory (in MiB)
-	cmd := exec.Command("nvidia-smi", "--query-gpu=name,memory.total,memory.free", "--format=csv,noheader,nounits")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err == nil {
-		lines := bytes.Split(bytes.TrimSpace(out.Bytes()), []byte("\n"))
-		gpuCount = len(lines)
-		if gpuCount > 0 {
-			// Only extract info from the first GPU (if multiple GPUs exist)
-			parts := bytes.Split(lines[0], []byte(","))
-			if len(parts) >= 3 {
-				gpuModel = string(bytes.TrimSpace(parts[0]))
-				// memory.total and memory.free are in MiB (no "MiB" suffix due to nounits)
-				if mt, err := parseUint64(bytes.TrimSpace(parts[1])); err == nil {
-					gpuMemTotal = mt
-				}
-				if mf, err := parseUint64(bytes.TrimSpace(parts[2])); err == nil {
-					gpuMemFree = mf
-				}
-			}
-		}
-	}
-
-	// Get CPU name (Linux only)
-	cpuName := ""
-	if data, err := os.ReadFile("/proc/cpuinfo"); err == nil {
-		lines := bytes.Split(data, []byte("\n"))
-		for _, line := range lines {
-			if bytes.HasPrefix(line, []byte("model name")) {
-				parts := bytes.SplitN(line, []byte(":"), 2)
-				if len(parts) == 2 {
-					cpuName = strings.TrimSpace(string(parts[1]))
-					break
-				}
-			}
-		}
-	}
-
-	return &Resources{
-		CPUCount:       cpuCount,
-		CPUName:        cpuName,
-		MemoryTotal:    memTotal,
-		MemoryFree:     memFree,
-		DiskTotal:      diskTotal,
-		DiskFree:       diskFree,
-		GPUCount:       gpuCount,
-		GPUModel:       gpuModel,
-		GPUMemoryTotal: gpuMemTotal,
-		GPUMemoryFree:  gpuMemFree,
-	}, nil
-
-}
-
-// parseUint64 parses a byte slice to uint64
-func parseUint64(b []byte) (uint64, error) {
-	return strconv.ParseUint(string(b), 10, 64)
 }
 
 // ClearRayData removes Ray session temporary files
