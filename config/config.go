@@ -13,6 +13,7 @@ type Config struct {
 	LogLevel    string
 	AllowedIPs  []string
 	RayHeadPort int // New field for Ray head node port
+	ManagerIP   string
 }
 
 // Load returns a Config struct populated from the environment
@@ -24,6 +25,7 @@ func Load() (*Config, error) {
 		LogLevel:    getEnv("LOG_LEVEL", "info"),
 		AllowedIPs:  parseAllowedIPs(getEnv("ALLOWED_IPS", "127.0.0.1")),
 		RayHeadPort: getEnvAsInt("RAY_HEAD_PORT", 6379), // Default Ray port
+		ManagerIP:   getEnv("MANAGER_IP", "10.0.0.4"),
 	}
 
 	return config, nil

@@ -14,7 +14,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     *)
-      echo "Unknown option: $1"
+       echo "Usage: build-docker.sh [ --gpu ] [ --base-image ]"
       exit 1
       ;;
   esac
